@@ -1,0 +1,3 @@
+[deps]
+CFAnelastics = "45b71fc6-fff6-4b4e-ba1f-6968b823c40d"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
