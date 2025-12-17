@@ -1,7 +1,7 @@
 name = "CFAnelastics"
 uuid = "45b71fc6-fff6-4b4e-ba1f-6968b823c40d"
 authors = ["Thomas Dubos <thomas.dubos@polytechnique.edu> and contributors"]
-version = "1.0.0-DEV"
+version = "0.1.0"
 
 [compat]
 julia = "1.6.7"
