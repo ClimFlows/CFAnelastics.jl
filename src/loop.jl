@@ -9,7 +9,7 @@ Main time integration loop for the AN2D model; advances `state` in place and ret
   steps of at most `dt_max` [s] and `cfl` (≤ 1 for stability) times the stability limit of `time_scheme`, see
   `cfl_condition`
 - `outputs`: callable `outputs(model, state, dstate, scratch, book, t)`, called at t = 0 and at the end of each
-  time slice, with the diagnostics `book` and the time `t` [s] (e.g. to record diagnostics), then closed with
+  time slice, with the diagnostics `book` and the time `t` [s]; e.g. to record diagnostics, then closed with
   `close(outputs)` when the run ends, even on error; `nothing` records nothing
 """
 function loop(state, model::AN2D{F}, time_scheme, params; outputs = nothing) where {F}

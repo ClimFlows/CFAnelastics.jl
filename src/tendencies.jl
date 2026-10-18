@@ -137,7 +137,7 @@ for `LegacyBuoyancy`, g (ρ_R v - 1) for `ConsistentBuoyancy` (and as the diagno
     B = forcing_potential(scheme::BuoyancyScheme, fluid, g, ρ_R, p, cons, q, conj, chem)
 
 Potential B of the momentum forcing at reference density ρ_R and pressure p: h - conjvar consvar - chempot q
-[J kg⁻¹] for `ThermodynamicForcing`, or the buoyancy b [m s⁻²] (`buoyancy`) for a `BuoyancyForce`.
+[J kg⁻¹] for `ThermodynamicForcing`, or the buoyancy b [m s⁻²], see `buoyancy`, for a `BuoyancyForce`.
 """
 @inline forcing_potential(::ThermodynamicForcing, fluid, g, ρ_R, p, cons, q, conj, chem) = fluid(:p, :consvar, :q).specific_enthalpy(p, cons, q) - conj * cons - chem * q
 @inline forcing_potential(scheme::BuoyancyForce, fluid, g, ρ_R, p, cons, q, conj, chem) = buoyancy(scheme, g, ρ_R, fluid(:p, :consvar, :q).specific_volume(p, cons, q))
