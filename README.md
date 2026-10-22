@@ -39,8 +39,8 @@ wall = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))     # clo
 model = AN2D((; mgr = MultiThread(VectorizedCPU()), domain, space, fluid,
     spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(), buoyancy_scheme = ThermodynamicForcing(),
     thermoflux_scheme = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5), viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
-    anelastic_reference = AnelasticReference(domain, space, 1000.0; ptop = 1e5),
-    boundary_conditions = BoxBoundaryConditions(domain; bottom = wall, top = wall)))
+    anelastic_reference = AnelasticReference(domain, space, 1000.0; pref = 1e5),
+    boundary_conditions = BoxBoundaryConditions(domain; bottom = wall, top = wall), gauge_offset = 0.0))
 
 state = CFAnelastics.initialize(model; consvar = (x, z) -> 280 + z / 0.5 + 0.3 * sin(2π * x), q = (x, z) -> 0.035)
 state = CFAnelastics.loop(state, model, CFTimeSchemes.RungeKutta4(model),

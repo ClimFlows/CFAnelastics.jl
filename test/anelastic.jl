@@ -10,13 +10,13 @@ an_density(z) = ρ0 * (1 + 0.1 * (Lz - z) / Lz)
 32 × 16 box with every physical term on: buoyancy, vortex force, thermodynamic diffusion and viscosity, using the
 energy-conserving schemes
 =#
-function an_model(; mgr = mgr, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
+function an_model(; mgr = mgr, gauge_offset = 0.0, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
     domain = Box2D(; Mx = 32, Mz = 16, boundary)
-    anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
+    anelastic_reference = AnelasticReference(domain, space, an_density; pref = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
     return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
         buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = thermoflux, viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
-        anelastic_reference, boundary_conditions))
+        anelastic_reference, boundary_conditions, gauge_offset))
 end
 
 # the model's tendencies!, in the argument order of the generic checks (helpers.jl)
@@ -105,5 +105,32 @@ end
         @test wall_input(box, scratch, 2, 1).heat ≈ 40.0 * Lx rtol = 1e-12     # bottom HeatFlux delivers exactly ∫F dx
         div, scale = an_divergence(box, ds.u, ds.w)
         @test maximum(abs, div) / scale < 1e-11                              # anelastic constraint
+    end
+end
+
+# the reference pressure is hydrostatic and takes the value `pref` at the height z0 where the geopotential vanishes, inside
+# or outside the box; the gauge of the pressure changes the pressure and no tendency
+@testset "AN2D reference pressure and gauge" begin
+    domain = Box2D(; Mx = 8, Mz = 16, boundary = (Periodic, Bounded))
+    dz, Hz, Mz = Lz / 16, halo_size(domain)[2], 16
+    for z0 in (0.0, 0.2, Lz, -0.3, Lz + 0.4)
+        tank = Tank2D(Lx = Lx, Lz = Lz, g = g, z0 = z0)
+        (; ρ_R, p_R) = AnelasticReference(domain, tank, an_density; pref = 1e5)
+        j = clamp(floor(Int, (z0 - cellpoint(domain, dz, 2, Hz + 1)) / dz) + Hz + 1, Hz + 1, Hz + Mz - 1)
+        @test p_R[j] + (z0 - cellpoint(domain, dz, 2, j)) / dz * (p_R[j+1] - p_R[j]) ≈ 1e5 rtol = 1e-14
+        @test all(k -> p_R[k] - p_R[k+1] ≈ g * dz * (ρ_R[k] + ρ_R[k+1]) / 2, 1:Mz+1)       # ∂p_R/∂z = -g ℑz(ρ_R)
+    end
+    c = 37.5
+    for walls in ((; bottom = closed_wall(), top = closed_wall()), forced_box)
+        boundary = walls === forced_box ? (Bounded, Bounded) : (Periodic, Bounded)
+        model, shifted = an_model(; boundary, walls), an_model(; boundary, walls, gauge_offset = c)
+        state = an_state(model)
+        ds, scratch = evaluate(an_tend!, model, state)
+        ds_c, scratch_c = evaluate(an_tend!, shifted, state)
+        for name in (:u, :w, :m)
+            @test maximum(abs, getproperty(ds_c, name) .- getproperty(ds, name)) < 1e-12 * maximum(abs, getproperty(ds, name))
+        end
+        (; domain) = model
+        @test interior(domain, scratch_c.φ) .- interior(domain, scratch.φ) ≈ fill(c, size(interior(domain, scratch.φ))) rtol = 1e-12
     end
 end

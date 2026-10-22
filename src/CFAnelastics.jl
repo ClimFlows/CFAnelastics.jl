@@ -30,11 +30,14 @@ include("poisson.jl")
 
 """
     model = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme,
-                    viscosity_scheme, anelastic_reference, boundary_conditions))
+                    viscosity_scheme, anelastic_reference, boundary_conditions, gauge_offset))
 
 Anelastic binary fluid in a 2D box (x, z): prognostic m = ρ_R (consvar, q) at cell centers and the velocity (u, w)
 on faces, with ∇·(ρ_R u) = 0. `spatial_scheme` (e.g. `Centred2()`) sets the interpolations and differences of the
 C-grid, `vortex_scheme` the vortex force, `buoyancy_scheme` the momentum forcing (see `BuoyancyScheme`).
+`gauge_offset` [m² s⁻²] is the constant added to the kinematic pressure φ = (p - p_R)/ρ_R, defined up to a constant:
+the horizontal mean of φ on the bottom level is `gauge_offset` (see `PoissonSolver`). It changes the pressure but no
+tendency.
 """
 struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Fluid, Spatial<:SpatialScheme, Vortex<:VortexScheme,
             Buoyancy<:BuoyancyScheme, ThermoFlux<:ThermoFluxScheme{F}, Poisson<:PoissonSolver}
@@ -42,7 +45,7 @@ struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Flu
     mgr::Manager
     "the box (grid sizes, halo widths, topology)"
     domain::Domain
-    "the physical box: lengths Lx, Lz [m] and gravity g [m s⁻²]"
+    "the physical box: lengths Lx, Lz [m], gravity g [m s⁻²] and the height z0 [m] where the geopotential g (z - z0) vanishes"
     space::Tank2D{F}
     "wall conditions, discretized on the grid"
     boundary::Boundary
@@ -73,13 +76,13 @@ struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Flu
 end
 function AN2D(params)
     (; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference,
-       boundary_conditions) = params
+       boundary_conditions, gauge_offset) = params
     check_halo(domain, spatial_scheme)
     Mx, Mz = dims(domain)
     dx, dz = space.Lx / Mx, space.Lz / Mz
     check_tracers(boundary_conditions, 2)       # tracers (consvar, q)
     boundary = discretize(boundary_conditions, domain, (dx, dz))
-    poisson = PoissonSolver(domain, (dx, dz), anelastic_reference.ρ_R)
+    poisson = PoissonSolver(domain, (dx, dz), anelastic_reference.ρ_R; gauge_offset)
     return AN2D(mgr, domain, space, boundary, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
                 anelastic_reference, poisson, dx, dz, 1/dx, 1/dz)
 end
