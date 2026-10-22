@@ -25,7 +25,8 @@ Method, in the order of `pressure!`:
   5. transform back;
   6. fill the halo of φ: periodic copy, or zero normal gradient on walls.
 The mean mode (λ = 0) is singular, as φ is defined up to a constant: its bottom equation is replaced by φ = 0, so
-that the horizontal mean of φ vanishes on the bottom level (the gauge). Everything that does not depend on dU (plans,
+that the horizontal mean of φ vanishes on the bottom level; the constant `gauge_offset` is then added to φ (the
+gauge, which the user may choose: it changes the pressure but no tendency). Everything that does not depend on dU (plans,
 eigenvalues, Thomas factors) is computed once, at construction.
 =#
 
@@ -33,14 +34,14 @@ using FFTW: FFTW
 using LinearAlgebra: mul!
 
 """
-    solver = PoissonSolver(domain, spacing, ρ_R; flags = FFTW.MEASURE)
+    solver = PoissonSolver(domain, spacing, ρ_R; gauge_offset = 0, flags = FFTW.MEASURE)
 
 Poisson solver for the anelastic pressure on a `Box2D` or `Box3D`, with grid `spacing` (dx, dz) or (dx, dy, dz) in m.
 The vertical direction must be bounded; horizontal directions may be periodic or bounded, following the box
 topology. `ρ_R` (kg m⁻³) is the reference density at cell centers along the full z axis, halo included. `flags` are
 the FFTW planner flags: `FFTW.MEASURE` times candidate algorithms at construction and keeps the fastest, so results
 may differ at round-off level between runs; `FFTW.ESTIMATE` plans at once, reproducibly, with slower transforms.
-Apply with `pressure!`.
+`gauge_offset` [m² s⁻²] is the constant added to the solved φ (see `pressure!`). Apply with `pressure!`.
 
 The tridiagonal system of a row of `modes_by_level` (horizontal eigenvalue λ) at level j = 1, …, Mz (interior levels)
 reads
@@ -57,6 +58,7 @@ and is solved by the Thomas algorithm, with pivots p_1 = b_1, p_j = b_j - a_j c_
 Fields:
 - `domain`: the box
 - `inv_spacing`: (1/Δx, 1/Δz) or (1/Δx, 1/Δy, 1/Δz)  [m⁻¹]
+- `gauge_offset`: constant added to φ after the solve, the gauge of the pressure  [m² s⁻²]
 - `ρ_R`: reference density at cell centers, full z axis (halo included)  [kg m⁻³]
 - `ρ_w`: reference density on w-faces, ℑ(ρ_R), full z face axis  [kg m⁻³]
 - `rhs`: interior cells (Mx[, My], Mz): r/`scale` before the forward transform, φ after the backward one
@@ -82,6 +84,7 @@ Fields:
 struct PoissonSolver{N, F, Domain, Spectral, Forward, ForwardCosine, BackwardCosine, Backward}
     domain::Domain
     inv_spacing::NTuple{N, F}
+    gauge_offset::F
     ρ_R::Vector{F}
     ρ_w::Vector{F}
     rhs::Array{F, N}
@@ -98,7 +101,7 @@ struct PoissonSolver{N, F, Domain, Spectral, Forward, ForwardCosine, BackwardCos
     inv_pivot::Matrix{F}
 end
 
-function PoissonSolver(domain, spacing::NTuple{N, F}, ρ_R; flags = FFTW.MEASURE) where {N, F}
+function PoissonSolver(domain, spacing::NTuple{N, F}, ρ_R; gauge_offset = zero(F), flags = FFTW.MEASURE) where {N, F}
     M, H, topology = dims(domain), halo_size(domain), boundary_topology(domain)
     check_vertical(topology[N])
     Mz, Hz, Δz = M[N], H[N], spacing[N]
@@ -121,7 +124,7 @@ function PoissonSolver(domain, spacing::NTuple{N, F}, ρ_R; flags = FFTW.MEASURE
 
     rhs = zeros(F, M...)
     modes_by_level = reshape(modes, length(λ), Mz)
-    return PoissonSolver(domain, inv.(spacing), collect(F, ρ_R), ρ_w, rhs, modes, spectral, modes_by_level, forward_plan,
+    return PoissonSolver(domain, inv.(spacing), F(gauge_offset), collect(F, ρ_R), ρ_w, rhs, modes, spectral, modes_by_level, forward_plan,
                          forward_cosine_plan, backward_cosine_plan, backward_plan, scale, a, thomas_factor, inv_pivot)
 end
 
@@ -327,7 +330,8 @@ Solve for the modified pressure `φ` = (p - p_R)/ρ_R (m² s⁻², cell centers,
 satisfies the discrete anelastic constraint ∇·(ρ_R (dU - ∇φ)) = 0 with no flow through walls, `dU = (du, dw)` or
 `(du, dv, dw)` being the momentum tendencies on faces (m s⁻²), periodized in periodic directions. Sets the normal
 components of `dU` on wall faces to zero. Fills the halo of `φ`: periodic, or zero normal gradient on walls. The
-horizontal mean of `φ` on the bottom level is zero. Returns `φ`.
+horizontal mean of `φ` on the bottom level is `gauge_offset` (zero by default): φ is defined up to a constant, which
+changes no tendency. Returns `φ`.
 """
 function pressure!(φ, solver::PoissonSolver, mgr, dU)
     (; domain, rhs, scale) = solver
@@ -377,23 +381,23 @@ end
 """
     φ = copy_to_interior!(φ, solver::PoissonSolver, mgr)
 
-φ = rhs on the interior cells of the halo-included φ, after `solve!`.
+φ = rhs + gauge_offset on the interior cells of the halo-included φ, after `solve!`.
 """
-function copy_to_interior!(φ, (; domain, rhs)::PoissonSolver{2}, mgr)
+function copy_to_interior!(φ, (; domain, rhs, gauge_offset)::PoissonSolver{2}, mgr)
     Hx, Hz = halo_size(domain)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
-            φ[i, j] = rhs[i-Hx, j-Hz]
+            φ[i, j] = rhs[i-Hx, j-Hz] + gauge_offset
         end
     end
     return φ
 end
-function copy_to_interior!(φ, (; domain, rhs)::PoissonSolver{3}, mgr)
+function copy_to_interior!(φ, (; domain, rhs, gauge_offset)::PoissonSolver{3}, mgr)
     Hx, Hy, Hz = halo_size(domain)
     @with mgr, let (irange, jrange, krange) = (interior_cells(domain, 1), interior_cells(domain, 2), interior_cells(domain, 3))
         for k in krange, j in jrange
             @inbounds @vec for i in irange
-                φ[i, j, k] = rhs[i-Hx, j-Hy, k-Hz]
+                φ[i, j, k] = rhs[i-Hx, j-Hy, k-Hz] + gauge_offset
             end
         end
     end
