@@ -1,5 +1,5 @@
 """
-    state = loop(state, model::AN2D, time_scheme, params; outputs = nothing)
+    state = loop(state, model::AN2D, time_scheme, params; outputs = nothing, book = diagnostics(model))
 
 Main time integration loop for the AN2D model; advances `state` in place and returns it.
 - `model`: AN2D model instance
@@ -11,8 +11,11 @@ Main time integration loop for the AN2D model; advances `state` in place and ret
 - `outputs`: callable `outputs(model, state, dstate, scratch, book, t)`, called at t = 0 and at the end of each
   time slice, with the diagnostics `book` and the time `t` [s]; e.g. to record diagnostics, then closed with
   `close(outputs)` when the run ends, even on error; `nothing` records nothing
+- `book`: the diagnostics `CookBook` handed to `outputs`, e.g. one with more diagnostics than `diagnostics(model)`;
+  built once, as each session of it overwrites the same output arrays
 """
-function loop(state, model::AN2D{F}, time_scheme, params; outputs = nothing) where {F}
+function loop(state, model::AN2D{F}, time_scheme, params; outputs = nothing,
+              book = diagnostics(model)) where {F}
     (; Nslice, slice_size, dt_max, cfl) = params
 
     # initialize time
@@ -20,9 +23,6 @@ function loop(state, model::AN2D{F}, time_scheme, params; outputs = nothing) whe
 
     # create dstate and scratch space
     dstate, scratch = CFTimeSchemes.tendencies!(void, void, model::AN2D, state, t)
-
-    # diagnostics, built once: the book owns the output arrays of its computed diagnostics
-    book = diagnostics(model)
 
     # the outputs are closed when the run ends, even on error
     try
