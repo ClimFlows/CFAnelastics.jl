@@ -134,3 +134,23 @@ end
         @test interior(domain, scratch_c.φ) .- interior(domain, scratch.φ) ≈ fill(c, size(interior(domain, scratch.φ))) rtol = 1e-12
     end
 end
+
+# the model in Float32 (every complex level of the Poisson solver is not 16-byte aligned there): it runs, keeps its float
+# type, satisfies the anelastic constraint and conserves energy to Float32 round-off, and allocates nothing
+@testset "AN2D in Float32" begin
+    domain, space32 = Box2D(; Mx = 32, Mz = 16, boundary = (Periodic, Bounded)), Tank2D(Lx = Float32(Lx), Lz = Float32(Lz), g = Float32(g))
+    wall = Wall(; tangential = FreeSlip(), tracers = (Flux(0f0), Flux(0f0)))
+    model = AN2D((; mgr = VectorizedCPU(), domain, space = space32, fluid = NonlinearBinaryFluid(:potential_temperature, map(Float32, fluid_params)),
+        spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(), buoyancy_scheme = ThermodynamicForcing(),
+        thermoflux_scheme = ThermoFluxConsistent(k_T = 1f-4, k_q = 1f-5), viscosity_scheme = ViscosityScheme(dyn_visc = 1f-3),
+        anelastic_reference = AnelasticReference(domain, space32, z -> Float32(an_density(z)); pref = 1f5),
+        boundary_conditions = BoxBoundaryConditions(domain; bottom = wall, top = wall), gauge_offset = 0f0))
+    tend32!(dstate, scratch, model, state) = tendencies!(dstate, scratch, model, state, 0f0)
+    state = an_state(model)
+    ds, scratch = evaluate(tend32!, model, state)
+    @test all(a -> eltype(a) == Float32, (values(state)..., values(ds)..., scratch.φ)) && all_finite(ds)
+    div, scale = an_divergence(model, ds.u, ds.w)
+    @test maximum(abs, div) / scale < 1e-4
+    test_energy(tend32!, an_cell_energies, model, state; tol = 1e-5)
+    test_no_allocations(tend32!, model, state)
+end
