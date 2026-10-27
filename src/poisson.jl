@@ -202,6 +202,7 @@ end
 function horizontal_plans(::ComplexCoefficients, F, horizontal, M, Mc, flags)
     periodic = Tuple(d for d in eachindex(M) if horizontal[d] isa Periodic)
     bounded  = Tuple(d for d in eachindex(M) if horizontal[d] isa Bounded)
+    flags    = flags | alignment_flag(Complex{F}, Mc)
     forward  = FFTW.plan_rfft(zeros(F, M...), periodic; flags = flags | alignment_flag(F, M))
     backward = FFTW.plan_brfft(zeros(Complex{F}, Mc...), M[first(periodic)], periodic; flags = flags | alignment_flag(F, M))
     forward_cosine, backward_cosine = cosine_plans(zeros(Complex{F}, Mc...), bounded, flags)
@@ -215,18 +216,19 @@ bounded directions.
 """
 cosine_plans(level, ::Tuple{}, flags) = (nothing, nothing)
 cosine_plans(level, bounded, flags) = (FFTW.plan_r2r!(level, FFTW.REDFT10, bounded; flags),
-                                       FFTW.plan_r2r!(level, FFTW.REDFT01, bounded; flags)) # complex levels: aligned
+                                       FFTW.plan_r2r!(level, FFTW.REDFT01, bounded; flags))
 
 #=
 FFTW's SIMD algorithms need the data to start on a 16-byte boundary, as the arrays the plans are made on do. Level k
 of an array starts (k - 1) × (bytes per level) after its first element: every level of `rhs` is aligned when a level
-of M real numbers fills a whole number of 16 bytes (every complex level is), otherwise the plans that read or write
-`rhs` must be UNALIGNED, about twice slower. FFTW checks the alignment whenever a plan is applied.
+of M real numbers fills a whole number of 16 bytes, and every level of `spectral` when a level of Mc complex numbers
+does (not always in Float32), otherwise the plans that read or write them must be UNALIGNED, about twice slower. FFTW
+checks the alignment whenever a plan is applied.
 =#
 """
     flag = alignment_flag(F, M)
 
-`FFTW.UNALIGNED` for the plans that read or write `rhs` when its levels of M real numbers do not all start on a
+`FFTW.UNALIGNED` for the plans that read or write an array whose levels of M numbers of type F do not all start on a
 16-byte boundary, 0 otherwise.
 """
 alignment_flag(F, M) = iszero(prod(M) * sizeof(F) % 16) ? 0 : FFTW.UNALIGNED
