@@ -108,7 +108,7 @@ function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_
             Tij               = fluid(:p, :consvar, :q).temperature(p_R[j], cons, qij)
             conj              = fluid(:p, :consvar, :q).conjugate_variable(p_R[j], cons, qij)
             chem              = fluid(:p, :consvar, :q).modified_chemical_potential(p_R[j], cons, qij)
-            _, ∂μ_∂p, _, ∂μ_∂q = fluid(:p, :T, :q).chemical_potential_derivatives(p_R[j], Tij, qij)
+            _, ∂μ_∂p, _, ∂μ_∂q = fluid(:p, :consvar, :q).chemical_potential_derivatives(p_R[j], cons, qij)
             consvar[i, j], q[i, j], T[i, j] = cons, qij, Tij
             conjvar[i, j], chempot[i, j] = conj, chem
             Cp[i, j]          = fluid(:p, :consvar, :q).heat_capacity(p_R[j], cons, qij)
